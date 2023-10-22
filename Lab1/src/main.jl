@@ -13,13 +13,13 @@ function test(n::Int, m::Int, k::Int)
     solution = a * b
     
     binet = b_multiply(a, b)
-    @test solution == binet
+    @test(solution == binet) |> display
 
     strassen = s_multiply(a, b)
-    @test solution == strassen
+    @test(solution == strassen) |> display
     
     deepmind = d_multiply(a, b)
-    @test solution == deepmind
+    @test(solution == deepmind) |> display
 end
 
 function flops_benchmark(n::Int, m::Int, k::Int)
@@ -34,8 +34,18 @@ function flops_benchmark(n::Int, m::Int, k::Int)
 end
 
 function main()
-    #test(420, 69, 69)
-    flops_benchmark(30, 30, 30) |> display
+    # test(16, 25, 25)
+    # flops_benchmark(69, 21, 37) |> display
+
+    # a = rand(16, 25)
+    # b = rand(25, 25)
+
+    # c_d = d_multiply(a, b)
+    # c = a * b
+
+    # display(c_d .== c)
+
+    #d_multiply(rand(16, 25), rand(25, 25)) |> display
 end
 
 main()

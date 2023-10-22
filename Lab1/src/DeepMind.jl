@@ -30,11 +30,11 @@ function identifier(name::Symbol, i::Int, j::Int)::Symbol
     Symbol(String(name) * "$i" * "$j")
 end
 
-macro divide(mtrx, row_division, col_division, row_width, col_width)
+macro divide(mtrx, n_row_blocks, n_col_blocks, row_block_width, col_block_width)
     declarations = [
-        :($(identifier(mtrx, i, j)) = @view($mtrx[block_range($i, $j, $row_width, $col_width)...]))
-        for i in 1:row_division
-        for j in 1:col_division
+        :($(identifier(mtrx, i, j)) = @view($mtrx[block_range($i, $j, $row_block_width, $col_block_width)...]))
+        for i in 1:n_row_blocks
+        for j in 1:n_col_blocks
     ]
 
     code = Expr(:block, declarations...)
@@ -70,14 +70,14 @@ function block_range(i::Int, j::Int, row_width::Int, col_width::Int)::Tuple{Unit
     index_range(i, row_width), index_range(j, col_width)
 end
 
-macro assign(mtrx, row_division, col_division, row_width, col_width)
+macro assign(mtrx, n_row_blocks, n_col_blocks, row_block_width, col_block_width)
     declarations = [
         :(
-            $mtrx[block_range($i, $j, $row_width, $col_width)...] .= 
-            $(identifier(mtrx, i, j))[1:$row_division, 1:$col_division]
+            $mtrx[block_range($i, $j, $row_block_width, $col_block_width)...] += 
+            $(identifier(mtrx, i, j))[1:$n_row_blocks, 1:$n_col_blocks]
         )
-        for i in 1:row_division
-        for j in 1:col_division
+        for i in 1:n_row_blocks
+        for j in 1:n_col_blocks
     ]
 
     code = Expr(:block, declarations...)

@@ -26,9 +26,9 @@ end
 
 function multiply(a::Matrix{<:Number}, b::Matrix{<:Number}, n_blocks::Union{Int, Symbol} = :auto)::Matrix{<:Number}
     n, m = size(a)
-    m_B, p = size(b)
+    m_b, p = size(b)
 
-    if m != m_B
+    if m != m_b
         throw(ArgumentError("Matrix sizes don't match"))
     end
 

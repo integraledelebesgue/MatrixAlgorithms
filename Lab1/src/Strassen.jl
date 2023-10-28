@@ -29,9 +29,9 @@ end
 
 function multiply(a::Matrix{<:Number}, b::Matrix{<:Number}, threshold::Int = 2)::Matrix{<:Number}
     n, m = size(a)
-    m_B, k = size(b)
+    m_b, k = size(b)
 
-    if m != m_B
+    if m != m_b
         throw(ArgumentError("Matrix sizes don't match"))
     end
 
@@ -40,8 +40,6 @@ function multiply(a::Matrix{<:Number}, b::Matrix{<:Number}, threshold::Int = 2):
     end
 
     a, b = pad_to_common_square(a, b)
-
-    m, _ = size(a)
 
     multiply_recursively(a, b)[1:n, 1:k]
 end

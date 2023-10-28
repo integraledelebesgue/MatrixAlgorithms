@@ -8,7 +8,7 @@ const c_formulae_source = "data/c.txt"
 
 function is_power_of(n::Int, base::Int)::Bool
     log_n = log(base, n)
-    log_n == floor(log_n)
+    log_n ≈ floor(log_n)
 end
 
 function multiply(a::Matrix{<:Number}, b::Matrix{<:Number})::Matrix{<:Number}
@@ -27,7 +27,7 @@ function multiply(a::Matrix{<:Number}, b::Matrix{<:Number})::Matrix{<:Number}
 end
 
 function identifier(name::Symbol, i::Int, j::Int)::Symbol
-    Symbol(String(name) * "$i" * "$j")
+    Symbol("$name$i$j")
 end
 
 macro divide(mtrx, n_row_blocks, n_col_blocks, row_block_width, col_block_width)
@@ -37,9 +37,9 @@ macro divide(mtrx, n_row_blocks, n_col_blocks, row_block_width, col_block_width)
         for j in 1:n_col_blocks
     ]
 
-    code = Expr(:block, declarations...)
-
-    esc(code)
+    declarations |>
+    block |> 
+    esc
 end
 
 function split(delimiter::Char)::Function
@@ -62,7 +62,7 @@ end
 
 function index_range(i::Int, width::Int)::UnitRange{Int}
     start = (i - 1) * width + 1
-    stop = start + width - 1
+    stop = i * width
     start:stop
 end
 
@@ -74,15 +74,15 @@ macro assign(mtrx, n_row_blocks, n_col_blocks, row_block_width, col_block_width)
     declarations = [
         :(
             $mtrx[block_range($i, $j, $row_block_width, $col_block_width)...] += 
-            $(identifier(mtrx, i, j))[1:$n_row_blocks, 1:$n_col_blocks]
+            $(identifier(mtrx, i, j))[1:$row_block_width, 1:$col_block_width]
         )
         for i in 1:n_row_blocks
         for j in 1:n_col_blocks
     ]
 
-    code = Expr(:block, declarations...)
-
-    esc(code)
+    declarations |> 
+    block |>  
+    esc
 end
 
 function multiply_recursively(a, b)

@@ -30,9 +30,9 @@ end
 
 function atomic_test(algorithm::Function, power::Int, a::Matrix{Float64}, b::Matrix{Float64})::Vector{Float64}
     elapsed_time = @elapsed algorithm(a, b)
-    flops = @count_ops algorithm($a, $b)
+    # flops = @count_ops algorithm($a, $b)  # cursed function, doesn't work...
     
-    [power, algorithms[algorithm], elapsed_time, additions(flops), multiplications(flops)]
+    [power, algorithms[algorithm], elapsed_time, 0 #=additions(flops)=#, 0 #=multiplications(flops)=#]
 end
 
 function test(power::Int)::Matrix{Float64}

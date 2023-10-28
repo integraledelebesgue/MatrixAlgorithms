@@ -1,7 +1,7 @@
 module DeepMind
 export multiply
 
-import Base.split as base_split
+using Base: split as base_split
 
 const h_formulae_source = "data/h.txt"
 const c_formulae_source = "data/c.txt"

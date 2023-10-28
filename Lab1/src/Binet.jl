@@ -1,7 +1,7 @@
 module Binet
 export multiply
 
-import Base.Iterators: flatten
+using Base.Iterators: flatten
 
 function pad(mtrx::Matrix{<:Number}, final_size::Int)::Matrix{<:Number}
     n, m = size(mtrx)

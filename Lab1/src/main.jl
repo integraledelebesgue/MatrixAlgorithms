@@ -1,10 +1,10 @@
 push!(LOAD_PATH, @__DIR__)
 
-import Test: @test
-import Binet: multiply as b_multiply
-import Strassen: multiply as s_multiply
-import DeepMind: multiply as d_multiply
-import Benchmark: benchmark, to_csv
+using Test: @test
+using Binet: multiply as b_multiply
+using Strassen: multiply as s_multiply
+using DeepMind: multiply as d_multiply
+using Benchmark: benchmark, to_csv
 
 const df_destination = "data/times.csv"
 
@@ -25,7 +25,7 @@ function test(n::Int, m::Int, k::Int)
 end
 
 function main()
-    2:5 |>
+    2:3 |>
     benchmark |>
     to_csv(df_destination)
 end

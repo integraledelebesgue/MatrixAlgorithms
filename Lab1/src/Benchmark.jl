@@ -1,12 +1,12 @@
 module Benchmark
-export benchmark
+export benchmark, to_csv
 
-import GFlops: @count_ops, Counter
-import Binet: multiply as binet
-import Strassen: multiply as strassen
-import DeepMind: multiply as ai
-import DataFrames: DataFrame
-import CSV
+using GFlops: @count_ops, Counter
+using Binet: multiply as binet
+using Strassen: multiply as strassen
+using DeepMind: multiply as ai
+using DataFrames: DataFrame
+using CSV
 
 const test_bases = (4, 5, 5)
 

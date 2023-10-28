@@ -1,7 +1,7 @@
 module Strassen
 export multiply
 
-import Base.Iterators: flatten
+using Base.Iterators: flatten
 
 const MatrixLike::Type = Union{Matrix, SubArray}
 

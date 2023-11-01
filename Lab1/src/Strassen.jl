@@ -2,6 +2,7 @@ module Strassen
 export multiply
 
 using Base.Iterators: flatten
+using Base.Threads: @spawn
 
 const MatrixLike::Type = Union{Matrix, SubArray}
 
@@ -63,7 +64,14 @@ macro divide(mtrx)
     end
 
     esc(code)
-end 
+end
+
+macro declare_ps()
+    1:7 .|>
+    (i -> :(Symbol("p$i") = $nothing)) |>
+    (exprs -> Expr(:block, exprs...)) |>
+    esc
+end
 
 function multiply_recursively(a::MatrixLike, b::MatrixLike, threshold::Int = 2)::Matrix{<:Number}
     n, _ = size(a)
@@ -77,13 +85,15 @@ function multiply_recursively(a::MatrixLike, b::MatrixLike, threshold::Int = 2):
     @divide a
     @divide b
 
-    p1 = multiply_recursively(a11 + a22, b11 + b22)
-    p2 = multiply_recursively(a21 + a22, b11)
-    p3 = multiply_recursively(a11, b12 - b22)
-    p4 = multiply_recursively(a22, b21 - b11)
-    p5 = multiply_recursively(a11 + a12, b22)
-    p6 = multiply_recursively(a21 - a11, b11 + b12)
-    p7 = multiply_recursively(a12 - a22, b21 + b22)
+    p1, p2, p3, p4, p5, p6, p7 = fetch.([
+        @spawn(multiply_recursively(a11 + a22, b11 + b22)),
+        @spawn(multiply_recursively(a21 + a22, b11)),
+        @spawn(multiply_recursively(a11, b12 - b22)),
+        @spawn(multiply_recursively(a22, b21 - b11)),
+        @spawn(multiply_recursively(a11 + a12, b22)),
+        @spawn(multiply_recursively(a21 - a11, b11 + b12)),
+        @spawn(multiply_recursively(a12 - a22, b21 + b22))
+    ])
 
     c = zeros(n, n)
 

@@ -2,61 +2,62 @@ module Factorization
 export lup, display
 
 using LinearAlgebra: SingularException, LowerTriangular, UpperTriangular, Diagonal
+using LoopVectorization: @turbo
+using Base: @assume_effects
 import Base.display
 
-struct LUP{T}
+struct LUP
     size::Int
-    factorized::Matrix{T}
-    L::Matrix{T}
-    U::Matrix{T}
+    factorized::Matrix{Float64}
+    L::Matrix{Float64}
+    U::Matrix{Float64}
     p::Vector{Int}
 end
 
-function LUP(matrix::Matrix{T})::LUP where T <: Number
+function LUP(matrix::Matrix{Float64})::LUP
     shape = size(matrix)
-    type = eltype(matrix)
 
-    LUP{type}(
+    LUP(
         shape[1],
         copy(matrix),
-        zeros(T, shape...),
-        zeros(T, shape...),
+        zeros(shape...),
+        zeros(shape...),
         collect(1:shape[1])
     )
 end
 
-function display(factorization::LUP{T})::Nothing where {T}
-    println("LUP{Matrix{$T}} factorization:")
+function display(factorization::LUP)::Nothing
+    println("LUP factorization:")
     println("L factor:")
     Base.display(factorization.L)
 
     println("U factor:")
     Base.display(factorization.U)
 
-    println("Row permutation:")
+    println("Row permutation P:")
     Base.display(factorization.p)
 end
 
-function swap!(vector::Vector{<:Number}, i::Int, j::Int)
-    vector[i], vector[j] = vector[j], vector[i]
+function swap!(vector::Vector{Int}, i::Int, j::Int)
+    @fastmath vector[i], vector[j] = vector[j], vector[i]
 end
 
-function swap_rows!(matrix::Matrix{<:Number}, i::Int, j::Int)
-    matrix[i, :], matrix[j, :] = matrix[j, :], matrix[i, :]
+function swap_rows!(matrix::Matrix{Float64}, i::Int, j::Int)
+    @turbo matrix[i, :], matrix[j, :] = matrix[j, :], matrix[i, :]
 end
 
-function subtract_schur_complement!(matrix::Matrix{<:Number}, col::Int)
+function subtract_schur_complement!(matrix::Matrix{Float64}, col::Int)
     a = matrix[col, col]
     v = @view(matrix[col+1:end, col])
     w = @view(matrix[col, col+1:end])
     submatrix = @view(matrix[col+1:end, col+1:end])
 
-    v ./= a
+    @turbo v ./= a
 
-    submatrix .-= v * w' 
+    @turbo submatrix .-= v * w' 
 end
 
-function get_pivot(matrix::Matrix{T}, col::Int)::Tuple{Int, T} where {T}
+function get_pivot(matrix::Matrix{Float64}, col::Int)::Tuple{Int, Float64}
     relative_row = @view(matrix[col:end, col]) .|> abs |> argmax
     row = relative_row + col - 1
     pivot = abs(matrix[row, col])
@@ -65,17 +66,19 @@ function get_pivot(matrix::Matrix{T}, col::Int)::Tuple{Int, T} where {T}
 end
 
 function fill_triangles!(result::LUP)
+    @inbounds begin
     result.L .+= LowerTriangular(result.factorized)
     result.L .-= Diagonal(result.L)
     result.L .+= Diagonal(ones(size(result.L, 1)))
     result.U .+= UpperTriangular(result.factorized)
+    end
 end
 
-function lup(matrix::Matrix{<:Number})::LUP
+@assume_effects :total function lup(matrix::Matrix{Float64})::LUP
     result = LUP(matrix)
     n = result.size
 
-    for col ∈ 1:n-1
+    @inbounds for col ∈ 1:n-1
         pivot_row, pivot = get_pivot(result.factorized, col)
 
         if pivot ≈ 0.0

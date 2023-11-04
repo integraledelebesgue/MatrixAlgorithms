@@ -1,5 +1,6 @@
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
 Pipe = "b98c9c47-44ae-5843-9183-064241ee97a0"
 Query = "1a8c2f83-1ff3-5112-b086-8aa67b057ba1"
 StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"

@@ -4,6 +4,7 @@ export lup, display
 using LinearAlgebra: SingularException, LowerTriangular, UpperTriangular, Diagonal
 using LoopVectorization: @turbo
 using Base: @assume_effects
+using Base.Threads: @spawn
 import Base.display
 
 abstract type LUP end
@@ -98,8 +99,11 @@ function set_ones_diagonal!(matrix::Matrix{Float64})
 end
 
 function fill_triangles!(result::DecomposedLUP)
-    fill_upper_triangle!(result.factorized, result.U)
-    fill_lower_triangle!(result.factorized, result.L)
+    @sync begin
+        @spawn fill_upper_triangle!(result.factorized, result.U)
+        @spawn fill_lower_triangle!(result.factorized, result.L)
+    end
+
     set_ones_diagonal!(result.L)
 end
 

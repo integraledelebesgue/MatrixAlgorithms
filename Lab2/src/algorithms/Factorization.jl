@@ -65,16 +65,28 @@ function get_pivot(matrix::Matrix{Float64}, col::Int)::Tuple{Int, Float64}
     (row, pivot)
 end
 
-function fill_triangles!(result::LUP)
-    @inbounds begin
-    result.L .+= LowerTriangular(result.factorized)
-    result.L .-= Diagonal(result.L)
-    result.L .+= Diagonal(ones(size(result.L, 1)))
-    result.U .+= UpperTriangular(result.factorized)
-    end
+function fill_upper_triangle!(source::Matrix{Float64}, destination::Matrix{Float64})
+    @inbounds @views destination .= UpperTriangular(source)
 end
 
-@assume_effects :total function lup(matrix::Matrix{Float64})::LUP
+function fill_lower_triangle!(source::Matrix{Float64}, destination::Matrix{Float64})
+    @inbounds @views destination .= LowerTriangular(source)
+end
+
+function set_ones_diagonal!(matrix::Matrix{Float64})
+    n = size(matrix, 1)
+    step = n + 1
+    stop = n ^ 2
+    @turbo @views matrix[1:step:stop] .= 1.0
+end
+
+function fill_triangles!(result::LUP)
+    fill_upper_triangle!(result.factorized, result.U)
+    fill_lower_triangle!(result.factorized, result.L)
+    set_ones_diagonal!(result.L)
+end
+
+@assume_effects :total !:nothrow function lup(matrix::Matrix{Float64})::LUP
     result = LUP(matrix)
     n = result.size
 

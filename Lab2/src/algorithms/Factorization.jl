@@ -40,7 +40,7 @@ function InplaceLUP(matrix::Matrix{Float64})::InplaceLUP
     InplaceLUP(
         n,
         copy(matrix),
-        collect(1:shape[1])
+        collect(1:n)
     )
 end
 
@@ -71,7 +71,6 @@ function subtract_schur_complement!(matrix::Matrix{Float64}, col::Int)
     submatrix = @view(matrix[col+1:end, col+1:end])
 
     @turbo v ./= a
-
     @turbo submatrix .-= v * w' 
 end
 

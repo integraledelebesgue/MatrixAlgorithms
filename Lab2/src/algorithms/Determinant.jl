@@ -4,11 +4,6 @@ using LinearAlgebra: SingularException
 using LoopVectorization: @turbo
 using Base: @assume_effects
 
-function swap!(vector::Vector{Int}, i::Int, j::Int)::Nothing
-    vector[i], vector[j] = vector[j], vector[i]
-    nothing
-end
-
 function swap_rows!(matrix::Matrix{Float64}, i::Int, j::Int)::Nothing
     @turbo @fastmath matrix[i, :], matrix[j, :] = matrix[j, :], matrix[i, :]
     nothing
@@ -37,14 +32,6 @@ function reduce_column!(matrix::Matrix{Float64}, col::Int)::Nothing
     end
 
     nothing
-end
-
-function diagonal_product(matrix::Matrix{Float64})::Float64
-    n = size(matrix, 1)
-    step = n + 1
-    stop = n ^ 2
-
-    @fastmath prod(@view(matrix[1:step:stop]))
 end
 
 @assume_effects :total function det(matrix::Matrix{Float64})::Float64

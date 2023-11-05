@@ -6,7 +6,9 @@ using LoopVectorization: @turbo
 using Base: @assume_effects
 import Base.display
 
-struct LUP
+abstract type LUP end
+
+struct DecomposedLUP <: LUP
     size::Int
     factorized::Matrix{Float64}
     L::Matrix{Float64}
@@ -14,10 +16,10 @@ struct LUP
     p::Vector{Int}
 end
 
-function LUP(matrix::Matrix{Float64})::LUP
+function DecomposedLUP(matrix::Matrix{Float64})::DecomposedLUP
     shape = size(matrix)
 
-    LUP(
+    DecomposedLUP(
         shape[1],
         copy(matrix),
         zeros(shape...),
@@ -26,7 +28,23 @@ function LUP(matrix::Matrix{Float64})::LUP
     )
 end
 
-function display(factorization::LUP)::Nothing
+struct InplaceLUP <: LUP
+    size::Int
+    factorized::Matrix{Float64}
+    p::Vector{Int}
+end
+
+function InplaceLUP(matrix::Matrix{Float64})::InplaceLUP
+    n = size(matrix, 1)
+
+    InplaceLUP(
+        n,
+        copy(matrix),
+        collect(1:shape[1])
+    )
+end
+
+function display(factorization::DecomposedLUP)::Nothing
     println("LUP factorization:")
     println("L factor:")
     Base.display(factorization.L)
@@ -80,14 +98,17 @@ function set_ones_diagonal!(matrix::Matrix{Float64})
     @turbo @views matrix[1:step:stop] .= 1.0
 end
 
-function fill_triangles!(result::LUP)
+function fill_triangles!(result::DecomposedLUP)
     fill_upper_triangle!(result.factorized, result.U)
     fill_lower_triangle!(result.factorized, result.L)
     set_ones_diagonal!(result.L)
 end
 
-@assume_effects :total !:nothrow function lup(matrix::Matrix{Float64})::LUP
-    result = LUP(matrix)
+@assume_effects :total !:nothrow function lup(matrix::Matrix{Float64}; decompose::Bool = true)::LUP
+    result = decompose ? 
+        DecomposedLUP(matrix) :
+        InplaceLUP(matrix)
+    
     n = result.size
 
     @inbounds for col ∈ 1:n-1
@@ -103,7 +124,9 @@ end
         subtract_schur_complement!(result.factorized, col)
     end
 
-    fill_triangles!(result)
+    if decompose
+        fill_triangles!(result)
+    end
 
     return result
 end

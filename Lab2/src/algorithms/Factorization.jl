@@ -25,7 +25,7 @@ function DecomposedLUP(matrix::Matrix{Float64})::DecomposedLUP
         copy(matrix),
         zeros(shape...),
         zeros(shape...),
-        collect(1:shape[1])
+        Vector(1:shape[1])
     )
 end
 
@@ -40,8 +40,8 @@ function InplaceLUP(matrix::Matrix{Float64})::InplaceLUP
 
     InplaceLUP(
         n,
-        copy(matrix),
-        collect(1:n)
+        copyto!(similar(matrix), matrix),
+        Vector(1:n)
     )
 end
 
@@ -58,29 +58,57 @@ function display(factorization::DecomposedLUP)::Nothing
 end
 
 function swap!(vector::Vector{Int}, i::Int, j::Int)
-    @fastmath vector[i], vector[j] = vector[j], vector[i]
+    @inbounds begin
+        tmp = vector[i]
+        vector[i] = vector[j]
+        vector[j] = tmp
+    end
 end
 
 function swap_rows!(matrix::Matrix{Float64}, i::Int, j::Int)
-    @turbo matrix[i, :], matrix[j, :] = matrix[j, :], matrix[i, :]
+    n = size(matrix, 1)
+
+    @inbounds @simd for col in 1:n
+        tmp = matrix[i, col]
+        matrix[i, col] = matrix[j, col]
+        matrix[j, col] = tmp
+    end
 end
 
-function subtract_schur_complement!(matrix::Matrix{Float64}, col::Int)
-    a = matrix[col, col]
-    v = @view(matrix[col+1:end, col])
-    w = @view(matrix[col, col+1:end])
-    submatrix = @view(matrix[col+1:end, col+1:end])
+function scale_column!(matrix::Matrix{Float64}, col::Int)
+    inv_element = inv(matrix[col, col])
+    n = size(matrix, 1)
 
-    @turbo v ./= a
-    @turbo submatrix .-= v * w' 
+    @simd for i in col+1:n
+        @inbounds @fastmath matrix[i, col] *= inv_element
+    end
+end
+
+@polly function subtract_schur_complement!(matrix::Matrix{Float64}, col::Int)
+    n = size(matrix, 1)
+    
+    for j in col+1:n
+        @simd for i in col+1:n
+            @inbounds @fastmath matrix[i, j] -= matrix[i, col] * matrix[col, j]
+        end
+    end
 end
 
 function get_pivot(matrix::Matrix{Float64}, col::Int)::Tuple{Int, Float64}
-    relative_row = @view(matrix[col:end, col]) .|> abs |> argmax
-    row = relative_row + col - 1
-    pivot = abs(matrix[row, col])
-    
-    (row, pivot)
+    n = size(matrix, 1)
+    @inbounds pivot = abs(matrix[col, col])
+    pivot_row = col
+
+    @simd for row in col+1:n 
+        @inbounds element_abs = abs(matrix[row, col])
+
+        if element_abs > pivot
+            pivot = element_abs
+            pivot_row = row
+        end
+    end
+
+    return (pivot_row, pivot)
 end
 
 function fill_upper_triangle!(source::Matrix{Float64}, destination::Matrix{Float64})
@@ -107,29 +135,28 @@ function fill_triangles!(result::DecomposedLUP)
     set_ones_diagonal!(result.L)
 end
 
-@assume_effects :total !:nothrow function lup(matrix::Matrix{Float64}; decompose::Bool = true)::LUP
+@assume_effects :total !:nothrow function lup(matrix::Matrix{Float64}; decompose::Bool = false)::LUP
     result = decompose ? 
         DecomposedLUP(matrix) :
         InplaceLUP(matrix)
     
     n = result.size
 
-    @inbounds for col ∈ 1:n-1
+    for col ∈ 1:n-1
         pivot_row, pivot = get_pivot(result.factorized, col)
 
-        if pivot ≈ 0.0
-            throw(SingularException(col))
+        pivot ≈ 0.0 && throw(SingularException(col))
+
+        if pivot_row != col
+            swap!(result.p, col, pivot_row)
+            swap_rows!(result.factorized, col, pivot_row)
         end
 
-        swap!(result.p, col, pivot_row)
-        swap_rows!(result.factorized, col, pivot_row)
-
+        scale_column!(result.factorized, col)
         subtract_schur_complement!(result.factorized, col)
     end
 
-    if decompose
-        fill_triangles!(result)
-    end
+    decompose && fill_triangles!(result)
 
     return result
 end

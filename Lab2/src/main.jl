@@ -45,9 +45,10 @@ function main()
     functions = [lup, ldet, m_inv]
     domain = 2 .^ collect(2:11)
 
-    benchmark(functions, domain, 10, :flops) |> 
+    benchmark(functions, domain, 1, :flops) |> 
         to_dataframe |> 
         save
 end
 
 main() |> display
+

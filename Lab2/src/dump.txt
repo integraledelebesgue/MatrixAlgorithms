@@ -1,0 +1,477 @@
+module Imports
+export @load_src_directories
+
+using Base.Iterators: flatmap
+using Pipe: @pipe
+
+function subdirectories(path::String)::Vector{String}
+    dirs = @pipe path |> 
+        readdir(_, join=true) |> 
+        filter(isdir)
+
+    subdirs = @pipe dirs |> 
+        flatmap(subdirectories, _) |> 
+        collect
+
+    return vcat(
+        dirs, 
+        subdirs
+    )
+end
+
+function block(exprs::Vector{Expr})::Expr
+    Expr(:block, exprs...)
+end
+
+function quote_push(path::String)::Expr
+    :(push!(LOAD_PATH, $path))
+end
+
+macro load_src_directories(path::String)
+    path |> 
+    subdirectories .|> 
+    quote_push |> 
+    block |> 
+    esc
+end
+
+end# module
+module Determinant
+
+using LoopVectorization: @turbo
+using Base: @assume_effects
+using LinearAlgebra: similar
+
+function swap_rows!(matrix::Matrix{Float64}, i::Int, j::Int)::Nothing
+    n = size(matrix, 1)
+
+    @inbounds @simd for col in 1:n
+        tmp = matrix[i, col]
+        matrix[i, col] = matrix[j, col]
+        matrix[j, col] = tmp
+    end
+
+    nothing
+end
+
+function get_pivot(matrix::Matrix{Float64}, col::Int)::Tuple{Int, Float64}
+    n = size(matrix, 1)
+    @inbounds pivot = abs(matrix[col, col])
+    pivot_row = col
+
+    @simd for row in col+1:n 
+        @inbounds element_abs = abs(matrix[row, col])
+
+        if element_abs > pivot
+            pivot = element_abs
+            pivot_row = row
+        end
+    end
+
+    return (pivot_row, pivot)
+end
+
+function divide_row!(matrix::Matrix{Float64}, row::Int)::Nothing
+    @inbounds inv_pivot = inv(matrix[row, row])
+    n = size(matrix, 1)
+
+    @simd for i in row+1:n
+        @inbounds @fastmath matrix[row, i] *= inv_pivot
+    end
+
+    nothing
+end
+
+@polly function reduce_column!(matrix::Matrix{Float64}, col::Int)::Nothing
+    n = size(matrix, 1)
+
+    @inbounds for i in col+1:n
+        element = matrix[i, col]
+        @simd for j in 1:n
+            @fastmath matrix[i, j] -= element * matrix[col, i]
+        end
+    end
+
+    nothing
+end
+
+@assume_effects :total function det(matrix::Matrix{Float64})::Float64
+    matrix = copy(matrix)
+    n = size(matrix, 1)
+    n_rows_permuted = 0
+    result = 1.0
+
+    for row_col in 1:n
+        pivot_row, pivot = get_pivot(matrix, row_col)
+
+        pivot ≈ 0.0 && return 0.0
+
+        @fastmath result *= pivot
+
+        if pivot_row != row_col
+            n_rows_permuted += 1
+        end
+
+        swap_rows!(matrix, row_col, pivot_row)
+
+        divide_row!(matrix, row_col)
+        reduce_column!(matrix, row_col)
+    end
+
+    sgn = isodd(n_rows_permuted) ? -1.0 : 1.0
+
+    return @fastmath result * sgn
+end
+
+end# module
+module Factorization
+export lup, display
+
+using LinearAlgebra: SingularException, LowerTriangular, UpperTriangular, Diagonal
+using LoopVectorization: @turbo
+using Base: @assume_effects
+using Base.Threads: @spawn
+import Base.display
+
+abstract type LUP end
+
+struct DecomposedLUP <: LUP
+    size::Int
+    factorized::Matrix{Float64}
+    L::Matrix{Float64}
+    U::Matrix{Float64}
+    p::Vector{Int}
+end
+
+function DecomposedLUP(matrix::Matrix{Float64})::DecomposedLUP
+    shape = size(matrix)
+
+    DecomposedLUP(
+        shape[1],
+        copy(matrix),
+        zeros(shape...),
+        zeros(shape...),
+        Vector(1:shape[1])
+    )
+end
+
+struct InplaceLUP <: LUP
+    size::Int
+    factorized::Matrix{Float64}
+    p::Vector{Int}
+end
+
+function InplaceLUP(matrix::Matrix{Float64})::InplaceLUP
+    n = size(matrix, 1)
+
+    InplaceLUP(
+        n,
+        copyto!(similar(matrix), matrix),
+        Vector(1:n)
+    )
+end
+
+function display(factorization::DecomposedLUP)::Nothing
+    println("LUP factorization:")
+    println("L factor:")
+    Base.display(factorization.L)
+
+    println("U factor:")
+    Base.display(factorization.U)
+
+    println("Row permutation P:")
+    Base.display(factorization.p)
+end
+
+function swap!(vector::Vector{Int}, i::Int, j::Int)
+    @inbounds begin
+        tmp = vector[i]
+        vector[i] = vector[j]
+        vector[j] = tmp
+    end
+end
+
+function swap_rows!(matrix::Matrix{Float64}, i::Int, j::Int)
+    n = size(matrix, 1)
+
+    @inbounds @simd for col in 1:n
+        tmp = matrix[i, col]
+        matrix[i, col] = matrix[j, col]
+        matrix[j, col] = tmp
+    end
+end
+
+function scale_column!(matrix::Matrix{Float64}, col::Int)
+    inv_element = inv(matrix[col, col])
+    n = size(matrix, 1)
+
+    @simd for i in col+1:n
+        @inbounds @fastmath matrix[i, col] *= inv_element
+    end
+end
+
+@polly function subtract_schur_complement!(matrix::Matrix{Float64}, col::Int)
+    n = size(matrix, 1)
+    
+    for j in col+1:n
+        @simd for i in col+1:n
+            @inbounds @fastmath matrix[i, j] -= matrix[i, col] * matrix[col, j]
+        end
+    end
+end
+
+function get_pivot(matrix::Matrix{Float64}, col::Int)::Tuple{Int, Float64}
+    n = size(matrix, 1)
+    @inbounds pivot = abs(matrix[col, col])
+    pivot_row = col
+
+    @simd for row in col+1:n 
+        @inbounds element_abs = abs(matrix[row, col])
+
+        if element_abs > pivot
+            pivot = element_abs
+            pivot_row = row
+        end
+    end
+
+    return (pivot_row, pivot)
+end
+
+function fill_upper_triangle!(source::Matrix{Float64}, destination::Matrix{Float64})
+    @inbounds @views destination .= UpperTriangular(source)
+end
+
+function fill_lower_triangle!(source::Matrix{Float64}, destination::Matrix{Float64})
+    @inbounds @views destination .= LowerTriangular(source)
+end
+
+function set_ones_diagonal!(matrix::Matrix{Float64})
+    n = size(matrix, 1)
+    step = n + 1
+    stop = n ^ 2
+    @turbo @views matrix[1:step:stop] .= 1.0
+end
+
+function fill_triangles!(result::DecomposedLUP)
+    @sync begin
+        @spawn fill_upper_triangle!(result.factorized, result.U)
+        @spawn fill_lower_triangle!(result.factorized, result.L)
+    end
+
+    set_ones_diagonal!(result.L)
+end
+
+@assume_effects :total !:nothrow function lup(matrix::Matrix{Float64}; decompose::Bool = false)::LUP
+    result = decompose ? 
+        DecomposedLUP(matrix) :
+        InplaceLUP(matrix)
+    
+    n = result.size
+
+    for col ∈ 1:n-1
+        pivot_row, pivot = get_pivot(result.factorized, col)
+
+        pivot ≈ 0.0 && throw(SingularException(col))
+
+        if pivot_row != col
+            swap!(result.p, col, pivot_row)
+            swap_rows!(result.factorized, col, pivot_row)
+        end
+
+        scale_column!(result.factorized, col)
+        subtract_schur_complement!(result.factorized, col)
+    end
+
+    decompose && fill_triangles!(result)
+
+    return result
+end
+
+end# module
+module Inversion
+export inv, inv!
+
+using LoopVectorization: @turbo
+using Base: @pure
+
+MatrixOrView = Union{Matrix{Float64}, SubArray}
+
+
+@pure function is_power_of_two(n::Int)::Bool
+    @fastmath ==((log(2, n) .|> [floor, ceil])...)
+end
+
+function inv(matrix::Matrix{Float64})::Matrix{Float64}
+    @assert is_power_of_two(size(matrix, 1))
+    matrix |> copy |> inv!
+end
+
+function trivial_inv!(matrix::MatrixOrView)::MatrixOrView
+    @inbounds a, c, b, d = matrix
+    @fastmath inv_det = Base.inv(a * d - b * c)
+
+    @inbounds @fastmath begin
+        matrix[1, 1] = d * inv_det
+        matrix[1, 2] = -b * inv_det
+        matrix[2, 1] = -c * inv_det
+        matrix[2, 2] = a * inv_det
+    end
+
+    return matrix
+end
+
+function inv!(matrix::MatrixOrView)::MatrixOrView
+    n = size(matrix, 1)
+    n_half = n ÷ 2
+
+    if n <= 2
+        return trivial_inv!(matrix)
+    end
+
+    upper = 1:n_half
+    lower = n_half+1:n
+
+    @inbounds @views begin
+        m11 = matrix[upper, upper]
+        m12 = matrix[upper, lower]
+        m21 = matrix[lower, upper]
+        m22 = matrix[lower, lower]
+    end
+
+    m11_inv = inv!(m11)
+
+    @turbo @fastmath m22 .-= m21 * m11_inv * m12
+    m22_inv = inv!(m22)
+
+    let m11_inv_copy = copy(m11_inv)
+        @turbo @fastmath m11_inv .= m11_inv_copy + m11_inv_copy * m12 * m22_inv * m21 * m11_inv_copy
+        @turbo @fastmath m12 .= -m11_inv_copy * m12 * m22_inv
+        @turbo @fastmath m21 .= -m22_inv * m21 * m11_inv_copy
+    end
+
+    return matrix
+end
+
+end# module
+module Speed
+export benchmark, Result
+
+using Base.Threads
+using GFlops
+
+struct Result
+    header::Vector{Symbol}
+    data::Matrix{Float64}
+end
+
+function hstack(vectors::Channel{Vector{Float64}})::Matrix{Float64}
+    reduce(hcat, vectors)
+end
+
+function cases(sizes::AbstractArray{Int, 1})::Channel{Matrix{Float64}}
+    Channel{Matrix{Float64}}() do channel
+        for s in sizes
+            put!(channel, rand(s, s))
+        end
+    end
+end
+
+const headers::Dict{Symbol, Vector{Symbol}} = Dict(
+    :time => [:size, :function, :time],
+    :flops => [:size, :function, :add, :mul]
+)
+
+const additions = [
+    :add16, :add32, :add64, :sub16, :sub32, :sub64
+]
+
+const multiplications = [
+    :mul16, :mul32, :mul64, :div16, :div32, :div64
+]
+
+function adds(counter::GFlops.Counter)::Int
+    getfield.([counter], additions) |> sum
+end
+
+function muls(counter::GFlops.Counter)::Int
+    getfield.([counter], multiplications) |> sum
+end
+
+function benchmark(functions::Vector{Function}, sizes::AbstractArray{Int, 1}, n_evals::Int, variant::Symbol)::Result
+    data = Channel{Vector{Float64}}() do results
+        for data in cases(sizes)
+            for (i, f) in enumerate(functions)
+                @threads :dynamic for _ in 1:n_evals
+                    if variant === :time
+                        time = @elapsed f(data)
+                        put!(results, [size(data, 1), i, time])
+                    elseif variant === :flops
+                        counter = @count_ops f(data)
+                        put!(results, [size(data, 1), i, adds(counter), muls(counter)])
+                    end
+                end
+            end
+        end
+    end
+
+    Result(
+        headers[variant],
+        data |> hstack |> transpose
+    )
+end
+
+end# module
+using LinearAlgebra: lu
+using LinearAlgebra: det as ldet
+using LinearAlgebra: inv as a_inv
+using Base.Threads
+using DataFrames: DataFrame
+using CSV
+
+push!(LOAD_PATH, @__DIR__)
+using Imports
+Imports.@load_src_directories(".")
+
+using Factorization: lup, display
+using Determinant: det
+using Inversion: inv as m_inv
+
+using Speed: benchmark, Result
+
+function to_dataframe(result::Result)::DataFrame
+    DataFrame(result.data, result.header)
+end 
+
+const path = "data/flops.csv"
+
+function save(df::DataFrame)
+    open(path, read=true, truncate=true) do io
+        CSV.write(io, df)
+    end
+end
+
+function force_precompilation()::Nothing
+    a = rand(8, 8)
+
+    @sync begin
+        @spawn lup(a, decompose=true)
+        @spawn det(a)
+        @spawn m_inv(a)
+    end
+
+    nothing
+end
+
+function main()
+    force_precompilation()
+
+    functions = [lup, ldet, m_inv]
+    domain = 2 .^ collect(2:11)
+
+    benchmark(functions, domain, 1, :flops) |> 
+        to_dataframe |> 
+        save
+end
+
+main() |> display
+

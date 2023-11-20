@@ -1,42 +1,52 @@
 module Speed
-export benchmark
+export benchmark, Result
 
 using Base.Threads
-using Pipe: @pipe
-using Base.Iterators: map as lazy_map
+using GFlops
 
-function test(f::Function, data::Matrix{Float64})
-    print(size(data, 1))
-    @spawn @elapsed f(data)
+struct Result
+    header::Vector{Symbol}
+    data::Matrix{Float64}
 end
 
-function await_all(results)
-    @views map!(fetch, results[3, :], results[3, :])
-    results
-end
-
-function data(size::Int)::Matrix{Float64}
-    rand(size, size)
-end
-
-function hstack(vectors)
+function hstack(vectors::Channel{Vector{Float64}})::Matrix{Float64}
     reduce(hcat, vectors)
 end
 
-function benchmark(functions::Vector{Function}, sizes::AbstractArray{Int, 1}, n_evals::Int)::Matrix{Float64}
-    cases = lazy_map(
-        n -> rand(n, n),
-        sizes
+function cases(sizes::AbstractArray{Int, 1})::Channel{Matrix{Float64}}
+    Channel{Matrix{Float64}}() do channel
+        for s in sizes
+            put!(channel, rand(s, s))
+        end
+    end
+end
+
+const headers::Dict{Symbol, Vector{Symbol}} = Dict(
+    :time => [:size, :function, :time],
+    :flops => [:size, :function, :add, :mul]
+)
+
+function benchmark(functions::Vector{Function}, sizes::AbstractArray{Int, 1}, n_evals::Int, variant::Symbol)::Result
+    data = Channel{Vector{Float64}}() do results
+        for data in cases(sizes)
+            for (i, f) in enumerate(functions)
+                @threads :dynamic for _ in 1:n_evals
+                    if variant === :time
+                        time = @elapsed f(data)
+                        put!(results, [size(data, 1), i, time])
+                    elseif variant === :flops
+                        counter = @count_ops f(data)
+                        put!(results, [size(data, 1), i, counter.add64, counter.mul64])
+                    end
+                end
+            end
+        end
+    end
+
+    Result(
+        headers[variant],
+        data |> hstack |> transpose
     )
-
-    results = @sync [
-        [size(data, 1), i_fun, test(functions[i_fun], data)]
-        for data in cases
-        for _ in n_evals
-        for i_fun in eachindex(functions)
-    ]
-
-    results |> hstack |> await_all |> transpose
 end
 
 end# module

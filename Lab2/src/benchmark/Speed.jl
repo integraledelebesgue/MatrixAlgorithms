@@ -26,6 +26,22 @@ const headers::Dict{Symbol, Vector{Symbol}} = Dict(
     :flops => [:size, :function, :add, :mul]
 )
 
+const additions = [
+    :add16, :add32, :add64, :sub16, :sub32, :sub64
+]
+
+const multiplications = [
+    :mul16, :mul32, :mul64, :div16, :div32, :div64
+]
+
+function adds(counter::GFlops.Counter)::Int
+    getfield.([counter], additions) |> sum
+end
+
+function muls(counter::GFlops.Counter)::Int
+    getfield.([counter], multiplications) |> sum
+end
+
 function benchmark(functions::Vector{Function}, sizes::AbstractArray{Int, 1}, n_evals::Int, variant::Symbol)::Result
     data = Channel{Vector{Float64}}() do results
         for data in cases(sizes)
@@ -36,7 +52,7 @@ function benchmark(functions::Vector{Function}, sizes::AbstractArray{Int, 1}, n_
                         put!(results, [size(data, 1), i, time])
                     elseif variant === :flops
                         counter = @count_ops f(data)
-                        put!(results, [size(data, 1), i, counter.add64, counter.mul64])
+                        put!(results, [size(data, 1), i, adds(counter), muls(counter)])
                     end
                 end
             end

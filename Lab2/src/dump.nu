@@ -1,1 +1,1 @@
-cat ./**/*.jl | str join | save dump.txt
+cat ./**/*.jl | str join | save --force dump.txt

@@ -3,6 +3,7 @@ export benchmark, Result
 
 using Base.Threads
 using GFlops
+using LinearAlgebra: det
 
 struct Result
     header::Vector{Symbol}
@@ -13,10 +14,17 @@ function hstack(vectors::Channel{Vector{Float64}})::Matrix{Float64}
     reduce(hcat, vectors)
 end
 
+function nonsingular(size::Int)::Matrix{Float64}
+    while true
+        a = rand(size, size)
+        det(a) ≉ 0.0 && return a
+    end
+end
+
 function cases(sizes::AbstractArray{Int, 1})::Channel{Matrix{Float64}}
     Channel{Matrix{Float64}}() do channel
         for s in sizes
-            put!(channel, rand(s, s))
+            put!(channel, nonsingular(s))
         end
     end
 end

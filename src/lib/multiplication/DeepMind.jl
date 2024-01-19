@@ -95,8 +95,8 @@ function multiply_recursively(a, b)
     @divide(a, 4, 5, n_chunk, m_chunk)
     @divide(b, 5, 5, m_chunk, m_chunk)
 
-    @declare_from_file "./meta/h.txt"
-    @declare_from_file "./meta/c.txt"
+    @declare_from_file "src/lib/multiplication/meta/h.txt"
+    @declare_from_file "src/lib/multiplication/meta/c.txt"
 
     c = zeros(n, m)
 

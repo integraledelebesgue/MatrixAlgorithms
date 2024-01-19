@@ -1,0 +1,4 @@
+name = "MatrixAlgorithms"
+uuid = "1c590875-83ed-4073-899c-909c3865ff34"
+authors = ["integraledelebesgue <jsmolka@student.agh.edu.pl>"]
+version = "0.1.0"

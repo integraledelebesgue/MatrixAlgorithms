@@ -1,6 +1,0 @@
-[deps]
-CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
-DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
-GFlops = "2ea8233c-34d4-5acc-88b4-02f326385bcc"
-Polynomials = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

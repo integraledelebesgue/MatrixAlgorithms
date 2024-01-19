@@ -1,7 +1,0 @@
-name = "main"
-uuid = "9b938c50-20fa-4816-bae3-7e52a60c3aa0"
-authors = ["integraledelebesgue <jsmolka@student.agh.edu.pl>"]
-version = "0.1.0"
-
-[deps]
-LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"

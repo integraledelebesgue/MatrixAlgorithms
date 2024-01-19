@@ -13,7 +13,13 @@ end
 
 function inv(matrix::Matrix{Float64})::Matrix{Float64}
     @assert is_power_of_two(size(matrix, 1))
-    matrix |> copy |> inv!
+
+    size(matrix, 1) == 1 && 
+        return Base.inv(matrix[1])
+
+    matrix |> 
+        copy |> 
+        inv!
 end
 
 function trivial_inv!(matrix::MatrixOrView)::MatrixOrView

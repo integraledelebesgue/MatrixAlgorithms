@@ -3,9 +3,6 @@ export multiply
 
 using Base: split as base_split
 
-const h_formulae_source = "data/h.txt"
-const c_formulae_source = "data/c.txt"
-
 function is_power_of(n::Int, base::Int)::Bool
     log_n = log(base, n)
     log_n ≈ floor(log_n)
@@ -98,8 +95,8 @@ function multiply_recursively(a, b)
     @divide(a, 4, 5, n_chunk, m_chunk)
     @divide(b, 5, 5, m_chunk, m_chunk)
 
-    @declare_from_file "meta/h.txt"
-    @declare_from_file "meta/c.txt"
+    @declare_from_file "./meta/h.txt"
+    @declare_from_file "./meta/c.txt"
 
     c = zeros(n, m)
 

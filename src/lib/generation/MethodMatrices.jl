@@ -1,64 +1,32 @@
 module MethodMatrices
 export fem_3d
 
-# function fem_3d(n_nodes::Int)::Matrix{Float64}
-#     n = 2 ^ k
-#     n_2 = n ^ 2
-#     n_3 = n ^ 3
+function fem_3d(k::UInt)::Matrix{Float64}
+    n = 2 ^ k
+    n_2 = n ^ 2 
+    n_3 = n ^ 3
 
-#     matrix = zeros(Int64, n_3, n_3)
-    
-#     for node in 1:n_3
+    matrix = zeros(Float64, n_3, n_3)
 
-#     end
-# end
+    for i in 1:n_3
+        level = (i - 1) ÷ n_2
+        remainder = (i - 1) % n_2
+        row = remainder ÷ n
+        col = remainder % n
 
-function fem_3d(k)
-    n = 2^k
-    n_2 = n^2 
+        matrix[i, i] = rand()
 
-    matrix = zeros(n^3, n^3)
-    matrix_size = size(matrix)[1]
+        level > 0 && matrix[i, i - n_2] = rand()
+        level < n - 1 && matrix[i, i + n_2] = rand()
 
-    for vertex in 1:matrix_size
-        level = (vertex - 1) ÷ n_2
-        rest = (vertex - 1) % n_2
-        row = rest ÷ n
-        col = rest % n
+        row > 0 && matrix[i, i - n] = rand()
+        row < n - 1 && matrix[i, i + n] = rand()
 
-        matrix[vertex, vertex] = rand()
-        if level > 0
-            top_level_neighbor = vertex - n_2
-            matrix[vertex, top_level_neighbor] = rand()
-        end
-
-        if level < n - 1
-            bottom_level_neighbor = vertex + n_2
-            matrix[vertex, bottom_level_neighbor] = rand()
-        end
-
-        if row > 0
-            top_neighbor = vertex - n
-            matrix[vertex, top_neighbor] = rand()
-        end
-
-        if row < n - 1
-            bottom_neighbor = vertex + n
-            matrix[vertex, bottom_neighbor] = rand()
-        end
-
-        if col > 0
-            left_neighbor = vertex - 1
-            matrix[vertex, left_neighbor] = rand()
-        end
-
-        if col < n - 1
-            right_neighbor = vertex + 1
-            matrix[vertex, right_neighbor] = rand()
-        end
+        col > 0 && matrix[i, i - 1] = rand()
+        col < n - 1 && matrix[i, i + 1] = rand()
     end
 
-    return matrix
+    matrix
 end
 
 end# module

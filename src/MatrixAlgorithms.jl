@@ -27,25 +27,29 @@ function save_compression(mat::Matrix{<:Number}, destination::String)
     save(destination)
 end
 
-function process(n::Int, method::Method)
-    matrix = fem_3d(n)
+function name(method::Method)::String
+    replace(
+        lowercase("$(method)"),
+        "(" => "",
+        ")" => ""
+    )
+end
 
-    save_sparsity_pattern(matrix, "$(directory)/fem_$(n).png") |> display
-    save_compression(matrix, "$(directory)/fem_$(n)_compressed.png") |> display
+function process(matrix::Matrix{<:Number}, method::Method)
+    n = size(matrix, 1)
+
+    save_sparsity_pattern(matrix, "$(directory)/fem_$(n).png")
+    save_compression(matrix, "$(directory)/fem_$(n)_compressed.png")
 
     permute!(
         matrix,
         permutation(matrix, method)
     )
 
-    method_name = replace(
-        lowercase("$(method)"),
-        "(" => "",
-        ")" => ""
-    )
+    method_name = name(method)
 
-    save_sparsity_pattern(matrix, "$(directory)/fem_$(n)_$(method_name)_permuted.png") |> display
-    save_compression(matrix, "$(directory)/fem_$(n)_$(method_name)_permuted_compressed.png") |> display
+    save_sparsity_pattern(matrix, "$(directory)/fem_$(n)_$(method_name)_permuted.png")
+    save_compression(matrix, "$(directory)/fem_$(n)_$(method_name)_permuted_compressed.png")
 end
 
 function generate()
@@ -57,9 +61,20 @@ function generate()
 
     sizes = 2:4
 
-    for method in methods, size in sizes
-        process(size, method)
+    println("Generation started")
+
+    for size in sizes
+        matrix = fem_3d(size)
+
+        for method in methods
+            process(matrix, method)
+            println("  $(name(method)) ($size, $size) finished!")
+        end
+
+        GC.gc()
     end
+
+    println("Finished!")
 end
 
 function sample()
@@ -90,7 +105,7 @@ end
 
 function main()
     # sample()
-    # generate()
+    generate()
 end
 
 main() |> display

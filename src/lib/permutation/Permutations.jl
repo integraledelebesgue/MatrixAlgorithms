@@ -1,8 +1,10 @@
 module Permutations
-export permute!, Method, MinimalDegree, CuthillMcKee, ReversedCuthillMcKee
+export permute!, permutation, Method, MinimalDegree, CuthillMcKee, CuthillMcKee, ReversedCuthillMcKee
 
 using Base: OneTo, visit, Perm
-using DataStructures: PriorityQueue, enqueue!, dequeue!
+using DataStructures: PriorityQueue, enqueue!, dequeue!, Deque
+
+using Base.Iterators: filter as lazy_filter
 
 import Random: permute!
 import Base: argmin
@@ -24,12 +26,9 @@ function permute!(mat::Matrix{T}, method::Method)::Matrix{T} where {T <: Number}
 end
 
 function permute!(mat::Matrix{T}, p::Permutation)::Matrix{T} where {T <: Number}
-    n = size(mat, 2)
-
-    for (old_row, new_row) in enumerate(p), i in 1:n
-        @inbounds mat[old_row, i], mat[new_row, i] = mat[new_row, i], mat[old_row, i]
-    end
-
+    permute!.(eachcol(mat), [p])
+    permute!.(eachrow(mat), [p])
+    
     mat
 end
 
@@ -49,7 +48,7 @@ function neighbourhood(mat::Matrix{<:Number})::Neighbourhood
     Dict(1:n .=> nonzero)
 end
 
-function argmin(nb::Neighbourhood)::UInt
+function min_degree(nb::Neighbourhood)::UInt
     argmin(
         length ∘ last, 
         nb
@@ -71,7 +70,7 @@ function permutation(mat::Matrix{<:Number}, ::MinimalDegree)::Permutation
     nb = neighbourhood(mat)
 
     for i in 1:n
-        next = argmin(nb)
+        next = min_degree(nb)
         permutation[i] = next
         drop!(nb, next)
     end
@@ -80,85 +79,57 @@ function permutation(mat::Matrix{<:Number}, ::MinimalDegree)::Permutation
 end
 
 
-struct BFSControl
-    queue::PriorityQueue{UInt, UInt}
-    visited::BitVector
-    neighbourhood::Neighbourhood
-
-    BFSControl(mat::Matrix{<:Number}) =
-        new(
-            PriorityQueue{UInt, UInt}(),
-            falses(size(mat, 1)),
-            neighbourhood(mat)
-        )
-end
-
-function not_finished(control::BFSControl)::Bool
-    length(control.queue) > 0
-end
-
-function is_visited(vertex::UInt, control::BFSControl)::Bool
-    control.visited[vertex]
-end
-
-function visit!(vertex::UInt, control::BFSControl)
-    control.visited[vertex] = true
-end
-
-function neighbours(vertex::UInt, control::BFSControl)::Set{UInt}
-    control.neighbourhood[vertex]
-end
-
-function descending_degrees(control::BFSControl)::Vector{UInt}
-    sort(
-        collect(keys(control.neighbourhood)), 
-        by = x -> degree(x, control)
-    )
-end
-
-function degree(vertex::UInt, control::BFSControl)::UInt
-    length(control.neighbourhood[vertex])
-end
-
-function update!(vertex::UInt, control::BFSControl)
-    deg = degree(vertex, control)
-
-    if vertex ∉ keys(control.queue)
-        enqueue!(control.queue, vertex, deg)
-        return
+function indicator(mat::Matrix{<:Number})::BitMatrix
+    ind = mat .!= zero(eltype(mat))
+    
+    for i in 1:size(mat, 1)
+        ind[i, i] = false
     end
 
-    if control.queue[vertex] > deg
-        delete!(control.queue, vertex)
-        enqueue!(control.queue, vertex, deg)
-    end
+    ind
 end
 
-function bfs!(control::BFSControl, perm::Permutation)
-    while not_finished(control)
-        curr = dequeue!(control.queue)
-        
-        is_visited(curr, control) && continue
-        visit!(curr, control)
-
-        push!(perm, curr)
-
-        for nei ∈ neighbours(curr, control)
-            is_visited(nei, control) && continue
-            update!(nei, control)
-        end
-    end
+function adjacency(mat::Matrix{<:Number})::Vector{Vector{UInt}}
+    mat |>
+    indicator |>
+    eachrow .|>
+    findall
 end
 
 function permutation(mat::Matrix{<:Number}, ::CuthillMcKee)::Permutation
-    control = BFSControl(mat)
+    n = size(mat, 1)
+
+    visited = falses(n)
+    adj = adjacency(mat)
+    degrees = length.(adj)
+    
     perm = Permutation()
+    deque = Deque{UInt}()
 
-    for vertex in descending_degrees(control)
-        is_visited(vertex, control) && continue
+    descending(vertices::Vector{UInt})::Vector{UInt} = 
+        sort(vertices, by = i -> degrees[i])
 
-        update!(vertex, control)
-        bfs!(control, perm)
+    bfs!(start::UInt)::Nothing = begin
+        push!(deque, start)
+
+        while length(deque) > 0
+            curr = popfirst!(deque)
+
+            visited[curr] && continue
+            visited[curr] = true
+
+            push!(perm, curr)
+
+            for neigh in descending(adj[curr])
+                !visited[neigh] && push!(deque, neigh)
+            end
+        end
+
+        nothing
+    end
+
+    for vertex in descending(UInt.(1:n))
+        !visited[vertex] && bfs!(vertex)
     end
 
     perm

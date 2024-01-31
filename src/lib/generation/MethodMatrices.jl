@@ -16,16 +16,7 @@ function fem_3d(k::Int)::Matrix{Float64}
         row = remainder ÷ n
         col = remainder % n
 
-        matrix[i, i] = rand()
-
-        # level > 0 && matrix[i, i - n_2] = rand()
-        # level < n - 1 && matrix[i, i + n_2] = rand()
-
-        # row > 0 && matrix[i, i - n] = rand()
-        # row < n - 1 && matrix[i, i + n] = rand()
-
-        # col > 0 && matrix[i, i - 1] = rand()
-        # col < n - 1 && matrix[i, i + 1] = rand()
+        assign!(i, i)
 
         level > 0 && assign!(i, i - n_2)
         level < n - 1 && assign!(i, i + n_2)

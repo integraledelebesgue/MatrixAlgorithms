@@ -29,9 +29,6 @@ function draw(matrix::HMatrix)::Image
     canvas = trues(n, m)
 
     mark!(canvas, matrix.root)
-    # reverse!(canvas, dims=1)
-
-    # heatmap(canvas, legend=:none, axis=:off, cmap=:grays, aspectratio=:equal, title=title)
     Gray.(canvas)
 end
 

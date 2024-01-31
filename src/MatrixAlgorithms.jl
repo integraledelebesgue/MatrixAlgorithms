@@ -62,8 +62,8 @@ function generate()
     end
 end
 
-function main()
-    m = fem_3d(2)
+function sample()
+    m = rand_sparse(256, 0.1)
     rank = 3
     threshold = 0.1
 
@@ -71,24 +71,26 @@ function main()
         sparsity_pattern |> 
         save("images/sample.png")
 
-    # m_compressed = hmatrix(m, rank, threshold)
+    m_compressed = hmatrix(m, rank, threshold)
 
-    # draw(m_compressed) |>
-    #     save("images/rand_sparse_compressed.png")
+    draw(m_compressed) |>
+        save("images/rand_sparse_compressed.png")
 
-    # p = permutation(m, MinimalDegree())
+    p = permutation(m, MinimalDegree())
 
-    # permute!(m, p) |> 
-    #     sparsity_pattern |> 
-    #     save("images/rand_sparse_permuted.png")
+    permute!(m, p) |> 
+        sparsity_pattern |> 
+        save("images/rand_sparse_permuted.png")
 
-    # m_permuted_compressed = hmatrix(m, 3, 0.001)
+    m_permuted_compressed = hmatrix(m, 3, 0.001)
 
-    # draw(m_permuted_compressed, title="Random (30% non-zero)") |>
-    #     save("images/rand_sparse_permuted_hmatrix.png")
+    draw(m_permuted_compressed, title="Random (30% non-zero)") |>
+        save("images/rand_sparse_permuted_hmatrix.png")
+end
 
+function main()
+    # sample()
     # generate()
-
 end
 
 main() |> display

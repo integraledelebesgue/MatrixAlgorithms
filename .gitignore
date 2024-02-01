@@ -2,5 +2,5 @@ Questions
 Papers
 .vscode
 **/*.csv
-# **/*.ipynb
+docs/code.txt
 images

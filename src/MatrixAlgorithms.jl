@@ -99,7 +99,7 @@ function sample()
 
     m_permuted_compressed = hmatrix(m, 3, 0.001)
 
-    draw(m_permuted_compressed, title="Random (30% non-zero)") |>
+    draw(m_permuted_compressed) |>
         save("images/rand_sparse_permuted_hmatrix.png")
 end
 

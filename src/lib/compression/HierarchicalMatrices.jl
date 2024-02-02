@@ -1,9 +1,10 @@
 module HierarchicalMatrices
-export hmatrix, HMatrix, dense, add
+export hmatrix, HMatrix, dense, add, multiply
 
 using LinearAlgebra: svd, Diagonal
 using Base: OneTo as one_to
 import Base: view, map
+import Base: size
 
 const View{T} = SubArray{T, 2, Matrix{T}}
 const MatrixOrView{T} = Union{Matrix{T}, View{T}}
@@ -46,6 +47,17 @@ macro sum(children, field)
     end |> esc
 end
 
+macro zip(children1, children2, type)
+    quote
+        Children{Tuple{$type, $type}}(
+            ($children1.ul, $children2.ul),
+            ($children1.ur, $children2.ur),
+            ($children1.ll, $children2.ll),
+            ($children1.lr, $children2.lr),
+        )
+    end |> esc
+end
+
 @enum State begin
     Divided
     Compressed
@@ -53,13 +65,13 @@ end
     Zero
 end
 
-struct SVD{T<:Number}
+struct SVD{T <: Number}
     U::Matrix{T}
     S::Vector{T}
     Vt::Matrix{T}
 end
 
-struct Node{T<:Number}
+struct Node{T <: Number}
     state::State
     rows::UnitRange{Int}
     cols::UnitRange{Int}
@@ -68,7 +80,7 @@ struct Node{T<:Number}
     error::T
 end
 
-function Node(matrix::Matrix{T}, rows::UnitRange{Int}, cols::UnitRange{Int}, rank::Int, tolerance::T)::Node{T} where {T}
+function Node(matrix::Matrix{T}, rows::UnitRange{Int}, cols::UnitRange{Int}, rank::Int, tolerance::T)::Node{T} where {T <: Number}
     is_zero(matrix, rows, cols) && return Node{T}(
         Zero, 
         rows,
@@ -129,7 +141,7 @@ function node_unchecked(
         data::Option{Union{SVD{T}, Matrix{T}}},
         children::Option{Children{Node{T}}},
         error::T
-)::Node{T} where {T}
+)::Node{T} where {T <: Number}
     Node{T}(state, rows, cols, data, children, error)
 end
 
@@ -141,7 +153,7 @@ function node_from_slice(
         original_cols::UnitRange{Int}, 
         rank::Int, 
         tolerance::T
-)::Node{T} where {T}
+)::Node{T} where {T <: Number}
     is_zero(matrix, rows, cols) && return Node{T}(
         Zero, 
         original_rows,
@@ -155,7 +167,7 @@ function node_from_slice(
         Trivial,
         original_rows,
         original_cols,
-        matrix,
+        matrix[rows, cols],
         nothing,
         zero(T)
     )
@@ -181,7 +193,8 @@ function node_from_slice(
 
     from_split((rows_cols, original_rows_cols)::Tuple{RangePair, RangePair})::Node{T} = 
         node_from_slice(
-            matrix, rows_cols..., 
+            matrix, 
+            rows_cols..., 
             original_rows_cols..., 
             rank, 
             tolerance
@@ -190,11 +203,50 @@ function node_from_slice(
     subranges = split(rows, cols)
     original_subranges = split(original_rows, original_cols)
     
-    children = @flatmap(
+    # beautiful overengineering *_* :
+    children = @flatmap(  
         from_split, 
-        zip(subranges, original_subranges), 
+        @zip(subranges, original_subranges, Tuple{UnitRange{Int}, UnitRange{Int}}),
         Node{T}
     )
+
+    # instead of this boilerplate:
+    # rows_first, rows_second = split(rows)
+    # cols_first, cols_second = split(cols)
+
+    # original_rows_first, original_rows_second = split(original_rows)
+    # original_cols_first, original_cols_second = split(original_cols)
+
+    # children = Children{Node{T}}(
+    #     node_from_slice(
+    #         matrix,
+    #         rows_first, cols_first,
+    #         original_rows_first, original_cols_first,
+    #         rank,
+    #         tolerance
+    #     ),
+    #     node_from_slice(
+    #         matrix,
+    #         rows_first, cols_second,
+    #         original_rows_first, original_cols_second,
+    #         rank,
+    #         tolerance
+    #     ),
+    #     node_from_slice(
+    #         matrix,
+    #         rows_second, cols_first,
+    #         original_rows_second, original_cols_first,
+    #         rank,
+    #         tolerance
+    #     ),
+    #     node_from_slice(
+    #         matrix,
+    #         rows_second, cols_second,
+    #         original_rows_second, original_cols_second,
+    #         rank,
+    #         tolerance
+    #     )
+    # )
     
     total_error = @sum(children, error)
 
@@ -206,14 +258,13 @@ function node_from_slice(
         children,
         total_error
     )
-
 end
 
 function is_trivial(rows::UnitRange{Int}, cols::UnitRange{Int})::Bool
     length(rows) <= 2 || length(cols) <= 2
 end
 
-@polly function is_zero(matrix::Matrix{T}, rows::UnitRange{Int}, cols::UnitRange{Int})::Bool where {T}
+@polly function is_zero(matrix::Matrix{T}, rows::UnitRange{Int}, cols::UnitRange{Int})::Bool where {T <: Number}
     for j in cols, i in rows
         @inbounds !iszero(matrix[i, j]) && return false
     end
@@ -247,7 +298,7 @@ struct HMatrix{T<:Number}
     error::Float64
 end
 
-function HMatrix(matrix::Matrix{T}, rank::Int, tolerance::T) where {T}
+function HMatrix(matrix::Matrix{T}, rank::Int, tolerance::T) where {T <: Number}
     n, m = size(matrix)
 
     root = Node(
@@ -261,19 +312,30 @@ function HMatrix(matrix::Matrix{T}, rank::Int, tolerance::T) where {T}
     HMatrix(root, rank, tolerance, root.error)
 end
 
-function hmatrix(matrix::Matrix{T}, rank::Int, tolerance::T) where {T}
+function hmatrix(matrix::Matrix{T}, rank::Int, tolerance::T) where {T <: Number}
     HMatrix(matrix, rank, tolerance)
 end
 
-function hmatrix_unchecked(root::Node{T}, rank::Int, tolerance::T)::HMatrix{T} where {T}
+function hmatrix_unchecked(root::Node{T}, rank::Int, tolerance::T)::HMatrix{T} where {T <: Number}
     HMatrix(root, rank, tolerance, root.error)
 end
 
-function recompose(dec::SVD{T})::Matrix{T} where {T}
+function size(mat::HMatrix{<:Number})::Tuple{Int, Int}
+    root = mat.root
+    (length(root.rows), length(root.cols))
+end
+
+function size(mat::HMatrix{<:Number}, dim::Int)::Int
+    dim in (1, 2) ? 
+        size(mat)[dim] : 
+        throw(ArgumentError("Axis $dim is out of bounds for 2-dimensional HMatrix"))
+end
+
+function recompose(dec::SVD{T})::Matrix{T} where {T <: Number}
     return dec.U * Diagonal(dec.S) * dec.Vt
 end
 
-function l2(matrix::Matrix{T})::T where {T}
+function l2(matrix::Matrix{T})::T where {T <: Number}
     foldl(
         (acc, element) -> acc + element ^ 2,
         matrix,
@@ -281,11 +343,11 @@ function l2(matrix::Matrix{T})::T where {T}
     )
 end
 
-function dense(mat::HMatrix{T})::Matrix{T} where {T}
+function dense(mat::HMatrix{T})::Matrix{T} where {T <: Number}
     dense(mat.root)
 end
 
-function dense(node::Node{T})::Matrix{T} where {T}
+function dense(node::Node{T})::Matrix{T} where {T <: Number}
     if node.state == Trivial
         node.svd
 
@@ -293,16 +355,20 @@ function dense(node::Node{T})::Matrix{T} where {T}
         n = length(node.rows)
         zeros(T, n, n)
 
-    elseif node.state == Compressed
+    elseif node.state == Compressed   
         recompose(node.svd)
     
     elseif node.state == Divided
-        [dense(node.children.ul) dense(node.children.ur);
-         dense(node.children.ll) dense(node.children.lr)]
+        ul = dense(node.children.ul)
+        ur = dense(node.children.ur)
+        ll = dense(node.children.ll)
+        lr = dense(node.children.lr)
+        
+        [ul ur; ll lr]
     end
 end
 
-function add_nonzero_leaves(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::Node{T} where {T}
+function add_nonzero_leaves(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::Node{T} where {T <: Number}
     if a.state == b.state == Trivial
         matrix = a.svd + b.svd
         one_to_n = 1:size(matrix, 1)
@@ -361,7 +427,7 @@ function add_nonzero_leaves(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::No
     end
 end
 
-function add_nonzero_maybe_dense(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::Node{T} where {T}
+function add_nonzero_dense(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::Node{T} where {T <: Number}
     matrix = dense(a) + dense(b)
     one_to_n = 1:size(matrix, 1)
 
@@ -376,7 +442,7 @@ function add_nonzero_maybe_dense(a::Node{T}, b::Node{T}, rank::Int, tolerance::T
     )
 end
 
-function add(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::Node{T} where {T}
+function add(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::Node{T} where {T <: Number}
     if a.state == Zero
         deepcopy(b)
 
@@ -392,8 +458,6 @@ function add(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::Node{T} where {T}
         )
 
         error = @sum(children, error)
-        # display(error)
-        # display(typeof(error) == T) # true XD
 
         node_unchecked(
             Divided,
@@ -408,12 +472,12 @@ function add(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::Node{T} where {T}
         add_nonzero_leaves(a, b, rank, tolerance)
 
     else
-        add_nonzero_maybe_dense(a, b, rank, tolerance)
+        add_nonzero_dense(a, b, rank, tolerance)
     end
 end
 
-function add(a::HMatrix{T}, b::HMatrix{T})::HMatrix{T} where {T}
-    # TODO assert equal sizes
+function add(a::HMatrix{T}, b::HMatrix{T})::HMatrix{T} where {T <: Number}
+    @assert size(a) == size(b) "Mismatched dimensions - $(size(a)) + $(size(b))"
 
     rank = min(a.rank, b.rank)
     tolerance = max(a.tolerance, b.tolerance)
@@ -422,8 +486,150 @@ function add(a::HMatrix{T}, b::HMatrix{T})::HMatrix{T} where {T}
     hmatrix_unchecked(sum, rank, tolerance)
 end
 
-# function multiply(a::HMatrix{T}, v::Vector{T})::HMatrix{T} where {T}
+function multiply_nonzero_leaves(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::Node{T} where {T <: Number}
+    if a.state == b.state == Trivial
+        matrix = a.svd * b.svd
+        one_to_n = 1:size(matrix, 1)
 
-# end
+        node_from_slice(
+            matrix,
+            one_to_n,
+            one_to_n,
+            a.rows,
+            a.cols,
+            rank,
+            tolerance
+        )
+
+    elseif a.state == b.state == Compressed
+        matrix = recompose(a.svd) + recompose(b.svd)
+        one_to_n = 1:size(matrix, 1)
+
+        node_from_slice(
+            matrix,
+            one_to_n,
+            one_to_n,
+            a.rows,
+            a.cols,
+            rank,
+            tolerance
+        )
+
+    elseif a.state == Trivial && b.state == Compressed
+        matrix = a.svd * recompose(b.svd)
+        one_to_n = 1:size(matrix, 1)
+
+        node_from_slice(
+            matrix,
+            one_to_n,
+            one_to_n,
+            a.rows,
+            a.cols,
+            rank,
+            tolerance
+        )
+
+    elseif a.state == Compressed && b.state == Trivial
+        matrix = recompose(a.svd) * b.svd
+        one_to_n = 1:size(matrix, 1)
+
+        node_from_slice(
+            matrix,
+            one_to_n,
+            one_to_n,
+            a.rows,
+            a.cols,
+            rank,
+            tolerance
+        )
+    end
+end
+
+function multiply_nonzero_dense(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::Node{T} where {T <: Number}
+    matrix = dense(a) * dense(b)
+    one_to_n = 1:size(matrix, 1)
+
+    node_from_slice(
+        matrix,
+        one_to_n,
+        one_to_n,
+        a.rows,
+        a.cols,
+        rank,
+        tolerance
+    )
+end
+
+function multiply(a::Node{T}, b::Node{T}, rank::Int, tolerance::T)::Node{T} where {T <: Number}
+    if a.state == Zero || b.state == Zero
+        node_unchecked(
+            Zero,
+            a.rows,
+            a.cols,
+            nothing,
+            nothing,
+            zero(T)
+        )
+
+    elseif a.state == b.state == Divided
+        # Recursive (Binet) block multiplication 
+        # Order of arguments does matter.
+        # rows and cols of a result Node are always inherited from the first argument
+
+        children = Children{Node{T}}(
+            add( #                  ul
+                multiply(a.children.ul, b.children.ul, rank, tolerance),
+                multiply(a.children.ur, b.children.ll, rank, tolerance),
+                rank, 
+                tolerance
+            ),
+            add( #                  ur
+                multiply(a.children.ur, b.children.lr, rank, tolerance),
+                multiply(a.children.ul, b.children.ur, rank, tolerance),
+                rank, 
+                tolerance
+            ),
+            add( #                  ll
+                multiply(a.children.ll, b.children.ul, rank, tolerance),
+                multiply(a.children.lr, b.children.ll, rank, tolerance),
+                rank, 
+                tolerance
+            ),
+            add( #                  lr
+                multiply(a.children.lr, b.children.lr, rank, tolerance),
+                multiply(a.children.ll, b.children.ur, rank, tolerance),
+                rank, 
+                tolerance
+            )
+        )
+
+        error = @sum(children, error)
+
+        node_unchecked(
+            Divided,
+            a.rows,
+            a.cols,
+            nothing,
+            children,
+            error
+        )
+
+    elseif a.state != Divided && b.state != Divided
+        multiply_nonzero_leaves(a, b, rank, tolerance)
+
+    else
+        multiply_nonzero_dense(a, b, rank, tolerance)
+    end
+end
+
+function multiply(a::HMatrix{T}, b::HMatrix{T})::HMatrix{T} where {T <: Number}
+    @assert size(a, 2) == size(b, 1) "Mismatched dimensions - $(size(a)) * $(size(b))"
+
+    rank = min(a.rank, b.rank)
+    tolerance = max(a.tolerance, b.tolerance)
+
+    product = multiply(a.root, b.root, rank, tolerance)
+    hmatrix_unchecked(product, rank, tolerance)
+end
 
 end# module
